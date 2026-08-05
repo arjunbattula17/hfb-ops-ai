@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HFB Ops AI — Build Status</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📋</text></svg>">
+<link rel="stylesheet" href="style.css">
+<style>
+  .piece { display:grid; grid-template-columns: 1fr 90px 90px 90px; gap:12px; align-items:center; padding:14px 0; border-bottom:1px solid var(--border); }
+  .piece:last-child { border-bottom:none; }
+  .piece .name { font-weight:700; font-size:14px; }
+  .piece .desc { font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .score { text-align:center; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .score .lbl { font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; }
+  .verdict { text-align:center; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; }
+  .verdict.pass { background:#dcefe1; color:var(--green-dark); }
+  .verdict.fail { background:#fbe1d8; color:var(--red); }
+  .verdict.pending { background:#eee7d8; color:#8a7a3d; }
+  .gap { font-size:12.5px; margin-top:6px; padding:8px 10px; background:var(--bg); border-radius:6px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>HFB Ops AI — Build Status</h1>
+    <div class="sub">Each piece: independently re-solved and scored by a fresh critic agent against real math + real food-rescue tools (Copia, Replate). Bar to pass: 7/10 on both axes.</div>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <div id="pieces"></div>
+  </div>
+  <p style="text-align:center;margin-top:16px"><a href="index.html">&larr; Back to the app</a></p>
+</main>
+<footer class="foot">Updated as each critic pass completes. See app's Methodology tab for the full write-up of every formula.</footer>
+<script>
+const PIECES = [
+  { name: "Food Prioritization", desc: "Expiry urgency + pantry demand + nutrition, live-weighted ranking", correctness: null, usability: null, verdict: "pending", gap: null },
+  { name: "Delivery Routing", desc: "Cheapest-insertion VRP truck packing + nearest-neighbor routing, capacity-checked", correctness: null, usability: null, verdict: "pending", gap: null },
+  { name: "Volunteer Scheduling", desc: "Workload-to-hours conversion, shift rebalancing recommendation", correctness: null, usability: null, verdict: "pending", gap: null },
+  { name: "Fairness + Hurricane Mode", desc: "Max-min fair share allocation; demand-doubling + fuel-reserve emergency mode", correctness: null, usability: null, verdict: "pending", gap: null },
+];
+function render() {
+  document.getElementById("pieces").innerHTML = PIECES.map(p => `
+    <div class="piece">
+      <div>
+        <div class="name">${p.name}</div>
+        <div class="desc">${p.desc}</div>
+        ${p.gap ? `<div class="gap"><strong>Biggest gap noted:</strong> ${p.gap}</div>` : ""}
+      </div>
+      <div class="score"><div>${p.correctness ?? "—"}</div><div class="lbl">Correctness</div></div>
+      <div class="score"><div>${p.usability ?? "—"}</div><div class="lbl">Usability</div></div>
+      <div><span class="verdict ${p.verdict}">${p.verdict === "pass" ? "PASS" : p.verdict === "fail" ? "NEEDS WORK" : "REVIEW PENDING"}</span></div>
+    </div>
+  `).join("");
+}
+render();
+</script>
+</body>
+</html>

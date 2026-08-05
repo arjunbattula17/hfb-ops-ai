@@ -76,7 +76,16 @@ function renderOverview(plan, vol, scores) {
   fulfillDiv.innerHTML = PANTRIES.map(p => {
     const ideal = plan.idealTotals[p.id] || 0;
     const granted = plan.finalAlloc[p.id] || 0;
-    const pct = ideal > 0 ? (100 * granted / ideal) : 100;
+    if (ideal <= 0) {
+      return `<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px">
+          <span><strong>${p.name}</strong> (${p.families} families — ${p.needs.join(", ")})</span>
+          <span style="color:var(--ink-soft)">no urgent items today</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
+      </div>`;
+    }
+    const pct = 100 * granted / ideal;
     return `<div style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px">
         <span><strong>${p.name}</strong> (${p.families} families — ${p.needs.join(", ")})</span>
@@ -190,13 +199,13 @@ function renderFairness(plan) {
     PANTRIES.map(p => {
       const ideal = plan.idealTotals[p.id] || 0;
       const granted = plan.finalAlloc[p.id] || 0;
-      const pct = ideal > 0 ? 100 * granted / ideal : 100;
+      const pctLabel = ideal > 0 ? (100 * granted / ideal).toFixed(0) + "%" : "no urgent need";
       const items = plan.finalBasket[p.id].map(b => `${b.name} ${fmt(b.shippedLbs)}lb`).join(", ") || "—";
       return `<tr><td><strong>${p.name}</strong><br><span style="color:var(--ink-soft);font-size:11.5px">${p.needs.join(", ")}</span></td>
         <td class="num">${p.families * (state.hurricane ? 2 : 1)}</td>
         <td class="num">${fmt(ideal)} lb</td>
         <td class="num">${fmt(granted)} lb</td>
-        <td class="num">${pct.toFixed(0)}%</td>
+        <td class="num">${pctLabel}</td>
         <td>${items}</td></tr>`;
     }).join("");
 }
