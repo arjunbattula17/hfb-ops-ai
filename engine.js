@@ -232,7 +232,7 @@ function computeShipmentPlan(weights, hurricaneMode, fuelReservePct) {
 const WORKLOAD_SHARE = { Morning: 0.30, Afternoon: 0.55, Evening: 0.15 }; // ASSUMPTION: typical daily ops split
 const HURRICANE_EXTRA_HOURS_PER_PANTRY = 50; // ASSUMPTION: storm-prep tasks (extra sorting, pre-positioning, shelter kits)
 
-function computeVolunteerPlan(shipmentPlan, hurricaneMode) {
+function computeVolunteerPlan(shipmentPlan, hurricaneMode, availableOverride) {
   const urgentLbs = INVENTORY.filter(i => i.expiresInDays <= URGENCY_THRESHOLD_DAYS)
     .reduce((s, i) => s + i.quantity * i.lbsPerUnit, 0);
   const sortingHours = urgentLbs / LBS_PER_VOLUNTEER_HOUR_SORTING;
@@ -244,13 +244,14 @@ function computeVolunteerPlan(shipmentPlan, hurricaneMode) {
   const totalVolunteers = VOLUNTEER_SHIFTS.reduce((s, v) => s + v.available, 0);
 
   const shifts = VOLUNTEER_SHIFTS.map(v => {
+    const available = (availableOverride && availableOverride[v.id] != null) ? availableOverride[v.id] : v.available;
     const neededHours = totalHours * WORKLOAD_SHARE[v.id];
     const neededHeadcount = Math.ceil(neededHours / SHIFT_LENGTH_HOURS);
     const recommendedHeadcount = Math.round(totalVolunteers * WORKLOAD_SHARE[v.id]);
     return {
-      id: v.id, available: v.available, neededHours, neededHeadcount, recommendedHeadcount,
-      deficit: Math.max(0, neededHeadcount - v.available),
-      rebalanceDelta: recommendedHeadcount - v.available,
+      id: v.id, available, neededHours, neededHeadcount, recommendedHeadcount,
+      deficit: Math.max(0, neededHeadcount - available),
+      rebalanceDelta: recommendedHeadcount - available,
     };
   });
 

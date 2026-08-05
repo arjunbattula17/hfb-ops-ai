@@ -3,14 +3,23 @@
 // logic lives here — every number displayed comes straight from engine.js.
 // ============================================================================
 
-const state = { hurricane: false, fuelReserve: 0.35, weights: { expiry: 0.5, demand: 0.3, nutrition: 0.2 } };
+const state = { hurricane: false, fuelReserve: 0.35, weights: { expiry: 0.5, demand: 0.3, nutrition: 0.2 }, volunteerOverride: null };
 const fmt = n => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 const fmt1 = n => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
 const pantryById = Object.fromEntries(PANTRIES.map(p => [p.id, p]));
 const TRUCK_COLORS = ["#d9611b", "#2f7d4f", "#4a6fa5"];
 
 function currentPlan() { return computeShipmentPlan(state.weights, state.hurricane, state.fuelReserve); }
-function currentVol(plan) { return computeVolunteerPlan(plan, state.hurricane); }
+function currentVol(plan) { return computeVolunteerPlan(plan, state.hurricane, state.volunteerOverride); }
+
+function applyRecommendedShifts(vol) {
+  state.volunteerOverride = Object.fromEntries(vol.shifts.map(s => [s.id, s.recommendedHeadcount]));
+  renderAll();
+}
+function resetShifts() {
+  state.volunteerOverride = null;
+  renderAll();
+}
 
 // ---- tabs -------------------------------------------------------------
 document.querySelectorAll("nav.tabs button").forEach(btn => {
@@ -97,15 +106,27 @@ function renderOverview(plan, vol, scores) {
 }
 
 // ---- render: prioritization -------------------------------------------
+function expiryBadge(days) {
+  if (days <= 2) return `<span class="badge urgent">${days}d</span>`;
+  if (days >= 365) return `<span class="badge wait">${(days / 365).toFixed(1)}y</span>`;
+  return `<span class="badge wait">${days}d</span>`;
+}
+
 function renderPrioritization(scores) {
+  const demandRaw = computeDemandMatchRaw();
+  const top = scores[0];
+  document.getElementById("priorityReadout").innerHTML =
+    `<strong>Ship ${top.name} first</strong> — expires in ${top.expiresInDays <= 2 ? top.expiresInDays + " day" + (top.expiresInDays === 1 ? "" : "s") : (top.expiresInDays >= 365 ? (top.expiresInDays / 365).toFixed(1) + " years" : top.expiresInDays + " days")}, wanted by up to ${fmt(demandRaw[top.name])} families.`;
+
   document.getElementById("priorityTable").innerHTML =
-    `<tr><th>Item</th><th class="num">Urgency</th><th class="num">Demand match</th><th class="num">Nutrition</th><th class="num">Score</th></tr>` +
+    `<tr><th>Item</th><th>Expires in</th><th class="num">Urgency</th><th class="num">Demand match</th><th class="num">Nutrition</th><th class="num">Score</th></tr>` +
     scores.map(s => `<tr>
       <td>${s.name}</td>
+      <td>${expiryBadge(s.expiresInDays)}</td>
       <td class="num">${s.urgency.toFixed(2)}</td>
       <td class="num">${s.demandMatch.toFixed(2)}</td>
       <td class="num">${s.nutrition.toFixed(2)}</td>
-      <td class="num"><strong>${s.score.toFixed(3)}</strong></td>
+      <td class="num"><strong>${s.score.toFixed(2)}</strong></td>
     </tr>`).join("");
 }
 
@@ -169,16 +190,37 @@ function drawRouteMap(plan) {
 
 // ---- render: volunteers -------------------------------------------------
 function renderVolunteers(vol) {
+  const applied = !!state.volunteerOverride;
+  document.getElementById("volunteerActionBar").innerHTML = applied
+    ? `<span class="badge ok">Recommended plan applied</span> <button class="btn-link" id="btnResetShifts">reset to signed-up counts</button>`
+    : `<button class="btn-apply" id="btnApplyShifts">Apply recommended reallocation →</button>`;
+
   document.getElementById("volunteerTable").innerHTML =
-    `<tr><th>Shift</th><th class="num">Signed up</th><th class="num">Workload needs</th><th class="num">Recommended</th><th>Status</th></tr>` +
+    `<tr><th>Shift</th><th>Staffing (signed up vs. workload needs)</th><th class="num">${applied ? "Applied" : "Signed up"}</th><th class="num">Recommended</th><th>Status</th></tr>` +
     vol.shifts.map(s => {
       let badge = `<span class="badge ok">balanced</span>`;
       if (s.deficit > 0) badge = `<span class="badge urgent">short ${s.deficit}</span>`;
-      else if (s.rebalanceDelta <= -5) badge = `<span class="badge wait">overstaffed</span>`;
-      return `<tr><td>${s.id}</td><td class="num">${s.available}</td><td class="num">${s.neededHeadcount} (${fmt1(s.neededHours)}h)</td>
+      else if (s.rebalanceDelta <= -5 && !applied) badge = `<span class="badge wait">overstaffed</span>`;
+      const maxScale = Math.max(s.available, s.neededHeadcount, s.recommendedHeadcount, 1);
+      const availPct = Math.min(100, 100 * s.available / maxScale);
+      const needPct = Math.min(100, 100 * s.neededHeadcount / maxScale);
+      return `<tr>
+        <td>${s.id}</td>
+        <td>
+          <div class="bar-track" style="height:14px;position:relative">
+            <div class="bar-fill ${s.deficit > 0 ? "red" : "green"}" style="width:${availPct}%"></div>
+            <div style="position:absolute;left:${needPct}%;top:-2px;bottom:-2px;width:2px;background:var(--ink)"></div>
+          </div>
+        </td>
+        <td class="num">${s.available}</td>
         <td class="num">${s.recommendedHeadcount} <span style="color:${s.rebalanceDelta>0?"#c0392b":s.rebalanceDelta<0?"#2f7d4f":"inherit"}">(${s.rebalanceDelta>0?"+":""}${s.rebalanceDelta})</span></td>
         <td>${badge}</td></tr>`;
     }).join("");
+
+  const applyBtn = document.getElementById("btnApplyShifts");
+  if (applyBtn) applyBtn.addEventListener("click", () => applyRecommendedShifts(vol));
+  const resetBtn = document.getElementById("btnResetShifts");
+  if (resetBtn) resetBtn.addEventListener("click", resetShifts);
 
   document.getElementById("volunteerWorkloadBreakdown").innerHTML = `
     <div style="font-size:13px;line-height:2">
@@ -194,6 +236,17 @@ function renderVolunteers(vol) {
 
 // ---- render: fairness -------------------------------------------------
 function renderFairness(plan) {
+  const shortfalls = PANTRIES.map(p => ({ p, cut: plan.shortfallByPantry[p.id] || 0 })).filter(x => x.cut > 1e-6);
+  const explainEl = document.getElementById("fairnessExplain");
+  if (!shortfalls.length) {
+    explainEl.innerHTML = `<div class="callout info">Every pantry with an urgent-batch need is fully served today — no shortfall to absorb.</div>`;
+  } else {
+    shortfalls.sort((a, b) => b.cut - a.cut);
+    const satisfied = PANTRIES.filter(p => (plan.idealTotals[p.id] || 0) > 0 && (plan.shortfallByPantry[p.id] || 0) <= 1e-6).map(p => p.name);
+    const parts = shortfalls.map(x => `${x.p.name} absorbs ${fmt(x.cut)} lb of shortfall`).join("; ");
+    explainEl.innerHTML = `<div class="callout">${parts}${satisfied.length ? ` — because ${satisfied.join(" and ")}'s smaller request${satisfied.length > 1 ? "s are" : " is"} satisfied first under max-min fair share.` : "."}</div>`;
+  }
+
   document.getElementById("fairnessTable").innerHTML =
     `<tr><th>Pantry</th><th class="num">Families</th><th class="num">Requested</th><th class="num">Allocated</th><th class="num">Fulfillment</th><th>Items shipped today</th></tr>` +
     PANTRIES.map(p => {
@@ -220,7 +273,7 @@ function renderAbout() {
   <h3>Q3 · Volunteer scheduling</h3>
   <p>Workload (sorting + truck loading + pantry unloading, in volunteer-hours) is estimated from today's shipment plan, split across shifts by typical daily task mix, then compared to current shift signups. "Recommended" headcount reallocates the same 80 volunteers proportional to where the workload actually falls.</p>
   <h3>Q4 · Fairness</h3>
-  <p>Two-stage allocation: (1) each item is split across the pantries that want it, proportional to families; (2) if total demand exceeds truck capacity, max-min fair share equalizes fulfillment % across pantries (water-filling) rather than favoring the largest or closest pantry. Within a pantry's own basket, the lowest priority-score item is trimmed first when a cut is required.</p>
+  <p>Two-stage allocation: (1) each item is split across the pantries that want it, proportional to families; (2) if total demand exceeds truck capacity, max-min fair share (water-filling) fully satisfies the smallest requests first — capped at their own 100% ask, never over-served — then spreads any remaining shortfall across the larger, harder-to-fully-satisfy requesters, rather than favoring the largest or closest pantry outright. Within a pantry's own basket, the lowest priority-score item is trimmed first when a cut is required.</p>
   <h3>Q5 · Hurricane mode</h3>
   <p>Toggling it: (1) doubles families-in-need at every pantry per the brief; (2) holds back a fuel-reserve share of total truck capacity (default 35%, "fuel is limited"); (3) adds fixed storm-prep volunteer-hours per pantry. All four other modules recompute against these changed inputs — nothing is hardcoded for the hurricane case.</p>
   <h3>Known limitations</h3>
