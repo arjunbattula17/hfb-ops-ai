@@ -1,24 +1,25 @@
-# HFB Ops AI — Houston Food Bank Distribution Optimizer
+# HFB AI Ops — Houston Food Bank Operations Dashboard
 
-A real, client-side optimization tool for the Houston Food Bank hackathon brief: food prioritization, delivery routing, volunteer scheduling, fairness, and a hurricane-response mode — all computed live in the browser from the brief's case-study data (no backend, no build step).
+A real-data-only AI operations dashboard for Houston Food Bank, covering distribution logistics, volunteer scheduling, distribution fairness, waste reduction, and hurricane/disaster response.
 
-**Live app:** see repo "About" / GitHub Pages link.
+**Live app:** https://arjunbattula17.github.io/hfb-ops-ai/
+**Live build log (the actual builder/critic transcript):** https://arjunbattula17.github.io/hfb-ops-ai/status.html
 
-## What it computes (not just describes)
+## How it was built
 
-1. **Food prioritization** — a live-adjustable weighted score (expiration urgency, pantry demand match, nutrition density) ranks the 5 inventory items.
-2. **Delivery routing** — a cheapest-insertion VRP heuristic packs 3 trucks by capacity and geography, orders each route by nearest-neighbor from the warehouse, and reports real distance/fuel savings vs. a same-cargo "dedicated round trip per stop" baseline.
-3. **Volunteer scheduling** — converts today's shipment plan into volunteer-hours (sorting + loading + unloading), splits it across Morning/Afternoon/Evening by typical workload share, and recommends reallocating the existing 80 volunteers instead of just flagging shortfalls.
-4. **Fairness** — two-stage allocation: per-item proportional-fair split across pantries that requested it, then max-min fair share (water-filling) when total demand exceeds truck capacity, so small/specialized pantries aren't crowded out by large ones.
-5. **Hurricane mode** — one toggle: doubles families-in-need, holds back a fuel reserve share of fleet capacity, and adds storm-prep volunteer-hours. Every other module recomputes against the new inputs live.
+For each of the 5 modules, a fresh-context **builder** subagent drafted the module using only facts traceable to real published sources (Houston Food Bank's own FY25 fact sheets, its Form 990 via ProPublica Nonprofit Explorer, Feeding America's Map the Meal Gap, and real UPS ORION / Amazon Last-Mile Routing Research Challenge / FedEx logistics benchmarks). A fresh-context, adversarial **critic** subagent then independently re-fetched and re-verified the load-bearing numbers, flagged anything fabricated, unsourced, or misquoted, scored the draft, and named the single biggest gap. That gap was sent back to the builder for one revision round, then re-checked by the critic again.
+
+No number in this dashboard is invented. Anything that couldn't be verified from a real source is explicitly labeled as an estimate (with its derivation shown) or listed as an open/unresolved gap — see the Methodology & Sources section on the dashboard and the full research facts pack in `data.js`.
+
+One module (Waste Reduction) still shows "critic not convinced" after one revision round — that's left visible intentionally rather than rubber-stamped, because the underlying HFB figure (85M lbs / 47% of output) rests on a single self-reported PDF read that couldn't be independently corroborated with a second source this session.
+
+## Files
+
+- `data.js` — the full output of the research + builder/critic pipeline: `DATA.research` (5 domains of live-sourced facts, with URLs) and `DATA.results` (per-module builder1/critic1/builder2/critic2)
+- `app.js` — renders `DATA` into the dashboard (`index.html`)
+- `status.js` — renders the builder→critic evolution transcript (`status.html`)
+- `style.css` — shared styling, no build step
 
 ## Run it
 
 Static site, no build: open `index.html`, or serve the folder (`python -m http.server`).
-
-## Files
-
-- `data.js` — the brief's dataset + explicitly-labeled assumptions (unit-weight conversions, coordinates, nutrition scores)
-- `engine.js` — pure optimization functions (no DOM)
-- `ui.js` — renders engine output, wires up controls
-- All numeric assumptions not stated in the brief are commented `// ASSUMPTION:` in `data.js`/`engine.js` and surfaced in the app's Methodology tab.

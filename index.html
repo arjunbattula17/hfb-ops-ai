@@ -3,145 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HFB Ops AI — Houston Food Bank Distribution Optimizer</title>
+<title>HFB AI Ops — Houston Food Bank Operations Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥫</text></svg>">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <header class="top">
   <div>
-    <h1>HFB Ops AI</h1>
-    <div class="sub">Live optimization for food prioritization, routing, volunteers &amp; fairness — Houston Food Bank case data</div>
+    <h1>Houston Food Bank — AI Operations Dashboard</h1>
+    <div class="sub">Every number below is either cited to a real published source (HFB's own reporting, Form 990, Feeding America, or UPS/Amazon/FedEx logistics benchmarks) or explicitly labeled as an estimate. Built by a builder/critic subagent pipeline — see the <a href="status.html" style="color:inherit;text-decoration:underline">Live Build Log</a> for how each module was independently fact-checked and revised.</div>
   </div>
-  <label class="hurricane-toggle" id="hurricaneToggle">
-    <input type="checkbox" id="hurricaneCheckbox">
-    <span id="hurricaneLabel">🌀 Hurricane Mode: OFF</span>
-  </label>
 </header>
-
-<nav class="tabs">
-  <button data-view="overview" class="active">Overview</button>
-  <button data-view="prioritization">Food Prioritization</button>
-  <button data-view="routing">Delivery Routing</button>
-  <button data-view="volunteers">Volunteer Scheduling</button>
-  <button data-view="fairness">Fairness</button>
-  <button data-view="about">Methodology</button>
-</nav>
-
-<main>
-
-  <!-- OVERVIEW -->
-  <section class="view active" id="view-overview">
-    <div id="hurricaneBanner"></div>
-    <div class="grid cols-4" id="overviewStats"></div>
-    <div class="section-title">Today's dispatch snapshot</div>
-    <div class="grid cols-2">
-      <div class="card">
-        <h3>Ranked dispatch order (by priority score)</h3>
-        <table id="overviewPriorityTable"></table>
-      </div>
-      <div class="card">
-        <h3>Pantry fulfillment %</h3>
-        <div id="overviewFulfillment"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- PRIORITIZATION -->
-  <section class="view" id="view-prioritization">
-    <div class="grid cols-2">
-      <div class="card controls">
-        <h2>Q1 — Food Prioritization</h2>
-        <p class="hint">Score = weighted blend of expiration urgency, pantry demand match, and nutrition density. Adjust weights — the ranking recomputes live.</p>
-        <label>Expiration urgency <span class="val" id="wExpiryVal"></span></label>
-        <input type="range" id="wExpiry" min="0" max="1" step="0.05" value="0.5">
-        <label>Pantry demand match <span class="val" id="wDemandVal"></span></label>
-        <input type="range" id="wDemand" min="0" max="1" step="0.05" value="0.3">
-        <label>Nutrition density <span class="val" id="wNutritionVal"></span></label>
-        <input type="range" id="wNutrition" min="0" max="1" step="0.05" value="0.2">
-        <p class="assumption">Weights are normalized to sum to 1 automatically. Nutrition density values are editorial estimates (fiber/protein/micronutrient richness per food group) — see Methodology tab.</p>
-      </div>
-      <div class="card">
-        <h3>Priority score breakdown</h3>
-        <p class="hint" id="priorityReadout" style="font-size:13px;color:var(--ink)"></p>
-        <table id="priorityTable"></table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ROUTING -->
-  <section class="view" id="view-routing">
-    <div class="grid cols-2">
-      <div class="card">
-        <h3>Route map (warehouse → pantries)</h3>
-        <svg class="route-map" id="routeMap" viewBox="0 0 600 340"></svg>
-        <div class="legend" id="routeLegend"></div>
-      </div>
-      <div class="card">
-        <h3>Truck loads</h3>
-        <table id="truckTable"></table>
-        <div class="assumption">Packing: cheapest-insertion heuristic (greedy VRP) — each unit of cargo goes to whichever truck+route adds the least extra driving distance, subject to capacity. Not guaranteed globally optimal, but the naive-vs-optimized comparison below is a mathematically fair one (same cargo, same stops).</div>
-      </div>
-    </div>
-    <div class="grid cols-3" style="margin-top:16px">
-      <div class="card stat good"><div class="num" id="routeSavingsPct">—</div><div class="lbl">Distance saved vs. dedicated round-trips per stop</div></div>
-      <div class="card stat"><div class="num" id="routeFuelCost">—</div><div class="lbl">Estimated fuel cost, today's run</div></div>
-      <div class="card stat" id="routeShortfallCard"><div class="num" id="routeShortfall">—</div><div class="lbl">Lbs that don't fit today's run (deferred)</div></div>
-    </div>
-  </section>
-
-  <!-- VOLUNTEERS -->
-  <section class="view" id="view-volunteers">
-    <div class="grid cols-2">
-      <div class="card">
-        <h3>Shift workload vs. staffing</h3>
-        <div id="volunteerActionBar" style="margin-bottom:12px"></div>
-        <table id="volunteerTable"></table>
-        <p class="hint">"Recommended" reallocates the existing 80 volunteers in proportion to where the day's workload actually falls (receiving/sorting vs. packing/loading vs. cleanup/prep), rather than leaving today's shift signup counts untouched.</p>
-      </div>
-      <div class="card">
-        <h3>Where workload comes from</h3>
-        <div id="volunteerWorkloadBreakdown"></div>
-        <div class="assumption" id="volunteerAssumptions"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- FAIRNESS -->
-  <section class="view" id="view-fairness">
-    <div class="grid cols-2">
-      <div class="card">
-        <h3>Q4 — Fairness: who gets served, and by how much</h3>
-        <div id="fairnessExplain" style="margin-bottom:12px"></div>
-        <table id="fairnessTable"></table>
-      </div>
-      <div class="card">
-        <h3>How the AI decides fairness</h3>
-        <p class="hint">Not largest-pantry-first, not closest-first, not a flat equal split. Two rules, applied in order:</p>
-        <ol style="font-size:13px; padding-left:18px; line-height:1.7;">
-          <li><strong>Per-item fair share:</strong> each expiring food item is split across the pantries that actually requested it, proportional to families served.</li>
-          <li><strong>Capacity-constrained max-min fairness:</strong> when total demand exceeds truck capacity, pantries with small asks are fully satisfied first (capped at their own 100% — never over-served), and remaining shortfall is spread across the larger requesters that are hardest to fully satisfy — not dumped on whichever pantry is "biggest" by definition.</li>
-        </ol>
-        <p class="hint">This protects small/specialized pantries (e.g. Pantry C, bread-only) from being crowded out by large multi-category requesters (Pantry D), without ignoring D's real need.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ABOUT -->
-  <section class="view" id="view-about">
-    <div class="card">
-      <h2>Methodology &amp; assumptions</h2>
-      <div id="aboutContent"></div>
-    </div>
-  </section>
-
+<main id="app">
+  <div class="card"><p class="hint">Loading…</p></div>
 </main>
-
-<footer class="foot">Built on the Houston Food Bank case-study dataset (1 warehouse · 4 pantries · 3 trucks · 5 inventory items) — architecture scales to the full network (5 warehouses · 50 pantries · 20 trucks). All figures computed client-side, live, from the data in <code>data.js</code>.</footer>
-
+<footer class="foot">
+  Grounded in Houston Food Bank's own published FY25 reporting + Form 990 (via ProPublica), Feeding America Map the Meal Gap, and real UPS ORION / Amazon Last-Mile / FedEx logistics benchmarks. Every module went through an independent, adversarial fact-checking critic before appearing here — nothing here is a fabricated statistic. Repo: <a href="https://github.com/arjunbattula17/hfb-ops-ai">github.com/arjunbattula17/hfb-ops-ai</a>
+</footer>
 <script src="data.js"></script>
-<script src="engine.js"></script>
-<script src="ui.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
