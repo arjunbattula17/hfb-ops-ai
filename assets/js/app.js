@@ -10,6 +10,10 @@
   const fmt = (n) => Math.round(n).toLocaleString("en-US");
   const pct = (n) => (n * 100).toFixed(1) + "%";
 
+  const PIN_ICON =
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 14.5S3 9.8 3 6.3a5 5 0 0 1 10 0c0 3.5-5 8.2-5 8.2z"/><circle cx="8" cy="6.2" r="1.8"/></svg>';
+  const CHEVRON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+
   // ---------- Navigation ----------
   const panels = document.querySelectorAll("[data-panel]");
   const navLinks = document.querySelectorAll(".nav-link");
@@ -38,7 +42,7 @@
       const r = el.getBoundingClientRect();
       if (r.top < window.innerHeight) el.classList.add("in");
     });
-    document.getElementById("sidebar").classList.remove("open");
+    window.scrollTo(0, 0);
   }
 
   navLinks.forEach((link) => {
@@ -47,12 +51,6 @@
       history.replaceState(null, "", "#" + link.dataset.section);
       showSection(link.dataset.section);
     });
-  });
-
-  document.getElementById("menu-btn").addEventListener("click", () => {
-    const sb = document.getElementById("sidebar");
-    const open = sb.classList.toggle("open");
-    document.getElementById("menu-btn").setAttribute("aria-expanded", String(open));
   });
 
   // ---------- Reveal-on-scroll ----------
@@ -70,49 +68,163 @@
     document.getElementById("kpi-gap-card").classList.remove("warn");
   }
 
-  // ---------- Schedule table ----------
-  const scheduleBody = document.querySelector("#schedule-table tbody");
-  const sortedRoutes = routeResult.routes.slice().sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === "cold" ? -1 : 1;
-    return a.estMinutes - b.estMinutes;
-  });
-  let dispatchClock = 6 * 60 + 30; // 6:30 AM
-  sortedRoutes.forEach((r) => {
-    const h = Math.floor(dispatchClock / 60) % 24;
-    const m = dispatchClock % 60;
-    const timeStr = `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${timeStr}</td>
-      <td><strong>${r.truck.id}</strong></td>
-      <td>${r.kind === "cold" ? "Refrigerated" : "Dry"}</td>
-      <td>${r.stops.length ? r.stops.map((s) => s.zip).join(", ") : "—"}</td>
-      <td>${r.stops.length ? r.estMinutes + " min" : "—"}</td>
-      <td><span class="badge badge-green">Planned</span></td>`;
-    scheduleBody.appendChild(tr);
-    dispatchClock += r.kind === "cold" ? 20 : 35;
+  // ---------- Schedule: kanban board ----------
+  const kanbanBoard = document.getElementById("kanban-board");
+
+  function toggleDetail(cardEl, chevronEl) {
+    const detail = cardEl.querySelector(".kc-detail, .metric-row-detail");
+    if (!detail) return;
+    detail.classList.toggle("hidden");
+    if (chevronEl) chevronEl.classList.toggle("open");
+  }
+
+  function riskCard(f) {
+    const el = document.createElement("div");
+    el.className = "kanban-card tone-rose reveal";
+    el.innerHTML = `
+      <div class="kc-top"><strong>${f.neighborhood}</strong><span>${f.zip}</span></div>
+      <div class="kc-from">Cold share: ${fmt(f.coldLbs)} lbs · ${f.driveTimeMinFreeFlow.toFixed(0)} min free-flow drive</div>
+      <div class="kc-arrow">${PIN_ICON}<span>Needs mitigation</span></div>
+      <div class="kc-pill-row"><span class="metric-pill tone-rose">Unrouted <span class="kc-chevron">${CHEVRON}</span></span></div>
+      <div class="kc-detail hidden">${f.reason} <strong>Mitigation:</strong> ${f.mitigation}</div>`;
+    el.addEventListener("click", () => toggleDetail(el, el.querySelector(".kc-chevron")));
+    return el;
+  }
+
+  function stopCard(route, stop, kind) {
+    const el = document.createElement("div");
+    let tone, pillHtml, detailHtml;
+    if (kind === "cold") {
+      const cap = HFB_DATA.coldChainRules.operatingSafetyMarginMin;
+      const marginPct = Math.max(0, Math.min(100, ((cap - route.estMinutes) / cap) * 100));
+      tone = marginPct > 40 ? "green" : marginPct > 15 ? "amber" : "rose";
+      pillHtml = `${marginPct > 40 ? "Safe margin" : marginPct > 15 ? "Tight margin" : "Marginal"} (${marginPct.toFixed(0)}%)`;
+      detailHtml = `Route est. ${route.estMinutes} min vs. ${cap}-min cold-chain safety ceiling (FDA hot-day rule) — ${route.truck.id}, ${route.stops.length} stop(s), ${fmt(route.usedLbs)}/${fmt(route.truck.capacityLbs)} lbs loaded.`;
+    } else {
+      const util = (route.usedLbs / route.truck.capacityLbs) * 100;
+      tone = util > 95 ? "amber" : util < 70 ? "green" : "amber";
+      pillHtml = `${util > 95 ? "At capacity" : util < 70 ? "Light load" : "Near capacity"} (${util.toFixed(0)}%)`;
+      detailHtml = `${route.truck.id} loaded to ${fmt(route.usedLbs)} of ${fmt(route.truck.capacityLbs)} lbs capacity across ${route.stops.length} stop(s). No hard time limit for dry goods.`;
+    }
+    el.className = "kanban-card tone-" + (kind === "dry" ? "green" : "amber") + " reveal";
+    const lbs = kind === "cold" ? stop.coldLbs : stop.dryLbsThisLeg;
+    el.innerHTML = `
+      <div class="kc-top"><strong>${kind === "cold" ? "Refrigerated" : "Dry"} · ${fmt(lbs)} lbs</strong><span>${route.truck.id}</span></div>
+      <div class="kc-from">from Houston Food Bank — 535 Portwall St</div>
+      <div class="kc-arrow">${PIN_ICON}<span>${stop.agencyName}</span></div>
+      <div class="kc-meta"><span>${stop.neighborhood} · ${stop.zip}</span><span>${route.estMinutes} min route</span></div>
+      <div class="kc-pill-row"><span class="metric-pill tone-${tone}">${pillHtml} <span class="kc-chevron">${CHEVRON}</span></span></div>
+      <div class="kc-detail hidden">${detailHtml}</div>`;
+    el.addEventListener("click", () => toggleDetail(el, el.querySelector(".kc-chevron")));
+    return el;
+  }
+
+  const coldPlaced = [];
+  const dryPlaced = [];
+  routeResult.routes.forEach((r) => {
+    r.stops.forEach((s) => {
+      if (r.kind === "cold") coldPlaced.push({ route: r, stop: s });
+      else dryPlaced.push({ route: r, stop: s });
+    });
   });
 
-  // ---------- Allocation table ----------
-  const allocBody = document.querySelector("#alloc-table tbody");
+  const columns = [
+    {
+      tone: "rose", title: "Cold-chain risk",
+      sub: "Exceeds the safe refrigerated delivery window",
+      items: routeResult.coldChainRiskFlags,
+      render: riskCard,
+    },
+    {
+      tone: "amber", title: "Refrigerated routes",
+      sub: `≤ ${HFB_DATA.coldChainRules.operatingSafetyMarginMin}-minute direct delivery`,
+      items: coldPlaced,
+      render: (x) => stopCard(x.route, x.stop, "cold"),
+    },
+    {
+      tone: "green", title: "Dry routes",
+      sub: "Shelf-stable — no hard cold-chain time limit",
+      items: dryPlaced,
+      render: (x) => stopCard(x.route, x.stop, "dry"),
+    },
+  ];
+
+  columns.forEach((col) => {
+    const colEl = document.createElement("div");
+    colEl.className = "kanban-col";
+    const head = document.createElement("div");
+    head.className = "kanban-col-head tone-" + col.tone;
+    head.innerHTML = `
+      <div class="kc-title">${col.title}<span class="kc-count">${col.items.length}</span></div>
+      <div class="kc-sub">${col.sub}</div>`;
+    colEl.appendChild(head);
+    col.items.forEach((item) => colEl.appendChild(col.render(item)));
+    kanbanBoard.appendChild(colEl);
+    colEl.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+  });
+
+  // ---------- Metric-row helper (Allocations / Fairness) ----------
+  function metricRow({ title, sub, trendLabel, trendTone, value, valueLabel, detailHtml }) {
+    const row = document.createElement("div");
+    row.className = "metric-row reveal";
+    row.innerHTML = `
+      <button class="metric-row-head" type="button">
+        <span class="row-icon">${PIN_ICON}</span>
+        <span class="row-title">${title}<span class="row-sub">${sub}</span></span>
+        <span class="trend-pill tone-${trendTone}">${trendLabel}</span>
+        <span class="row-value">${value}<span class="row-value-label">${valueLabel}</span></span>
+        <span class="row-chevron">${CHEVRON}</span>
+      </button>
+      <div class="metric-row-detail hidden">${detailHtml}</div>`;
+    const head = row.querySelector(".metric-row-head");
+    head.addEventListener("click", () => toggleDetail(row, row.querySelector(".row-chevron")));
+    return row;
+  }
+
+  // ---------- Allocation list ----------
+  const allocList = document.getElementById("alloc-list");
   const sortedZones = allocResult.zones.slice().sort((a, b) => b.allocLbs - a.allocLbs);
   sortedZones.forEach((z) => {
-    const capPct = z.allocLbs / z.agencyCapacityLbs;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><strong>${z.neighborhood}</strong><br><span class="mono small muted">${z.zip}</span></td>
-      <td>${z.agencyName}</td>
-      <td>${z.povertyRatePct.toFixed(1)}% <span class="src">${z.povertyRateSource}</span></td>
-      <td>${fmt(z.fiPopulation)}</td>
-      <td class="mono">${fmt(z.allocLbs)}</td>
-      <td class="mono small">${fmt(z.coldLbs)} / ${fmt(z.dryLbs)}</td>
-      <td>
-        <div class="bar-cell">
-          <div class="bar-track"><div class="bar-fill ${capPct > 0.95 ? "over" : ""}" style="width:${Math.min(100, capPct * 100)}%"></div></div>
-          <span class="mono small">${pct(capPct)}</span>
-        </div>
-      </td>`;
-    allocBody.appendChild(tr);
+    const capPct = (z.allocLbs / z.agencyCapacityLbs) * 100;
+    const tone = capPct >= 95 ? "amber" : "green";
+    const row = metricRow({
+      title: z.neighborhood,
+      sub: z.zip,
+      trendLabel: z.cappedByAgency ? "At capacity" : "Has headroom",
+      trendTone: z.cappedByAgency ? "amber" : "green",
+      value: fmt(z.allocLbs) + " lbs",
+      valueLabel: "allocated",
+      detailHtml: `
+        <div class="detail-line"><strong>${z.agencyName}</strong> (${z.agencyTier})</div>
+        <div class="detail-line">Poverty rate ${z.povertyRatePct.toFixed(1)}% <span class="src">[${z.povertyRateSource}]</span> · est. food-insecure population ${fmt(z.fiPopulation)}</div>
+        <div class="detail-line">Cold ${fmt(z.coldLbs)} lbs / Dry ${fmt(z.dryLbs)} lbs</div>
+        <span class="metric-pill tone-${tone}">${capPct.toFixed(0)}% of agency capacity</span>`,
+    });
+    allocList.appendChild(row);
+    io.observe(row);
+  });
+
+  // ---------- Fairness list ----------
+  const fairnessList = document.getElementById("fairness-list");
+  const sortedByGap = allocResult.zones.slice().sort((a, b) => a.equityGap - b.equityGap);
+  sortedByGap.forEach((z) => {
+    const gapPts = z.equityGap * 100;
+    const tone = gapPts < -1 ? "rose" : gapPts > 1 ? "amber" : "green";
+    const label = gapPts < -1 ? "Underserved" : gapPts > 1 ? "Overserved" : "Balanced";
+    const row = metricRow({
+      title: z.neighborhood,
+      sub: z.zip,
+      trendLabel: label,
+      trendTone: tone,
+      value: (gapPts >= 0 ? "+" : "") + gapPts.toFixed(1) + " pts",
+      valueLabel: "equity gap",
+      detailHtml: `
+        <div class="detail-line">${pct(z.shareOfLbs)} of today's pounds vs. ${pct(z.shareOfNeed)} of the network's measured need.</div>
+        <div class="detail-line">${z.cappedByAgency ? "Primary driver: partner-agency intake capacity limit, not deprioritization." : "Not capacity-constrained today."}</div>
+        <span class="metric-pill tone-${tone}">${label}</span>`,
+    });
+    fairnessList.appendChild(row);
+    io.observe(row);
   });
 
   // ---------- Routes list ----------
@@ -142,7 +254,7 @@
     const warn = document.createElement("div");
     warn.className = "route-card reveal";
     warn.style.gridColumn = "1 / -1";
-    warn.innerHTML = `<div class="route-head"><strong>⚠ Unrouted cold-chain risk</strong></div>
+    warn.innerHTML = `<div class="route-head"><strong>Unrouted cold-chain risk</strong></div>
       <p class="small muted">${routeResult.coldChainRiskFlags
         .map((f) => `<strong>${f.neighborhood} (${f.zip})</strong>: ${f.mitigation}`)
         .join("<br>")}</p>`;
@@ -161,17 +273,17 @@
     }).addTo(map);
 
     const whIcon = L.divIcon({
-      html: '<div style="background:#14b8a6;width:16px;height:16px;border-radius:4px;border:2px solid #fbfcfd;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>',
+      html: '<div style="background:#2f6b4f;width:16px;height:16px;border-radius:4px;border:2px solid #fffdf9;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>',
       className: "", iconSize: [16, 16], iconAnchor: [8, 8],
     });
     L.marker([HFB_DATA.warehouse.lat, HFB_DATA.warehouse.lon], { icon: whIcon })
       .addTo(map)
       .bindPopup(`<strong>${HFB_DATA.warehouse.name}</strong><br>${HFB_DATA.warehouse.address}`);
 
-    const colors = { "REEFER-1": "#38bdf8", "REEFER-2": "#0ea5e9", "BOX-1": "#14b8a6", "BOX-2": "#2dd4bf", "BOX-3": "#0d9488", "BOX-4": "#134e4a" };
+    const colors = { "REEFER-1": "#3b6fd9", "REEFER-2": "#2454b0", "BOX-1": "#2f6b4f", "BOX-2": "#3a7a5c", "BOX-3": "#1d4a37", "BOX-4": "#4f9370" };
 
     routeResult.routes.forEach((r) => {
-      const color = colors[r.truck.id] || "#14b8a6";
+      const color = colors[r.truck.id] || "#2f6b4f";
       r.stops.forEach((s) => {
         const marker = L.circleMarker([s.lat, s.lon], {
           radius: 7, color, fillColor: color, fillOpacity: 0.85, weight: 2,
@@ -189,16 +301,14 @@
   }
 
   // ---------- Fairness chart ----------
-  const fairnessLabels = allocResult.zones.map((z) => z.zip);
-  const fairnessGaps = allocResult.zones.map((z) => +(z.equityGap * 100).toFixed(2));
   new Chart(document.getElementById("fairnessChart"), {
     type: "bar",
     data: {
-      labels: fairnessLabels,
+      labels: allocResult.zones.map((z) => z.zip),
       datasets: [{
         label: "Equity gap (share of lbs − share of need), pct points",
-        data: fairnessGaps,
-        backgroundColor: fairnessGaps.map((g) => (g < -1 ? "#ef4444" : g > 1 ? "#f59e0b" : "#14b8a6")),
+        data: allocResult.zones.map((z) => +(z.equityGap * 100).toFixed(2)),
+        backgroundColor: allocResult.zones.map((z) => (z.equityGap * 100 < -1 ? "#dc4a3f" : z.equityGap * 100 > 1 ? "#d97706" : "#2f6b4f")),
         borderRadius: 5,
       }],
     },
@@ -206,22 +316,11 @@
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        y: { title: { display: true, text: "pct points" }, grid: { color: "rgba(148,163,184,.15)" } },
+        y: { title: { display: true, text: "pct points" }, grid: { color: "rgba(89,84,63,.12)" } },
         x: { grid: { display: false } },
       },
     },
   });
-
-  const equityNotes = document.getElementById("equity-notes");
-  const underserved = allocResult.zones.filter((z) => z.equityGap < -0.01).sort((a, b) => a.equityGap - b.equityGap);
-  const overCapped = allocResult.zones.filter((z) => z.cappedByAgency);
-  equityNotes.innerHTML = `
-    <p class="muted">${underserved.length} of 13 zones are receiving a smaller share of pounds than their
-    share of measured need. ${overCapped.length} zone(s) hit their partner agency's intake capacity limit
-    today, which is the primary driver of any negative gap — not an intentional deprioritization.</p>
-    <ul class="scope-list">
-      ${underserved.slice(0, 5).map((z) => `<li><strong>${z.neighborhood} (${z.zip})</strong> — ${pct(Math.abs(z.equityGap))} below proportional share${z.cappedByAgency ? " · capacity-constrained" : ""}</li>`).join("")}
-    </ul>`;
 
   // ---------- Allocation chart ----------
   new Chart(document.getElementById("allocChart"), {
@@ -229,8 +328,8 @@
     data: {
       labels: sortedZones.map((z) => z.zip),
       datasets: [
-        { label: "Cold (lbs)", data: sortedZones.map((z) => z.coldLbs), backgroundColor: "#38bdf8", stack: "s" },
-        { label: "Dry (lbs)", data: sortedZones.map((z) => z.dryLbs), backgroundColor: "#14b8a6", stack: "s" },
+        { label: "Cold (lbs)", data: sortedZones.map((z) => z.coldLbs), backgroundColor: "#3b6fd9", stack: "s" },
+        { label: "Dry (lbs)", data: sortedZones.map((z) => z.dryLbs), backgroundColor: "#2f6b4f", stack: "s" },
       ],
     },
     options: {
@@ -238,7 +337,7 @@
       plugins: { legend: { position: "bottom" } },
       scales: {
         x: { stacked: true, grid: { display: false } },
-        y: { stacked: true, grid: { color: "rgba(148,163,184,.15)" } },
+        y: { stacked: true, grid: { color: "rgba(89,84,63,.12)" } },
       },
     },
   });
@@ -288,10 +387,6 @@
   approveBtn.addEventListener("click", () => {
     sessionStorage.setItem("hfb-approved", "1");
     renderApprovalState();
-    document.querySelectorAll("#schedule-table .badge").forEach((b) => {
-      b.textContent = "Approved";
-      b.className = "badge badge-green";
-    });
   });
   resetBtn.addEventListener("click", () => {
     sessionStorage.removeItem("hfb-approved");
