@@ -17,6 +17,7 @@
   .verdict.pass { background:#dcefe1; color:var(--green-dark); }
   .verdict.fail { background:#fbe1d8; color:var(--red); }
   .verdict.pending { background:#eee7d8; color:#8a7a3d; }
+  .verdict.fixed { background:#e4eef7; color:#1f4c73; }
   .gap { font-size:12.5px; margin-top:6px; padding:8px 10px; background:var(--bg); border-radius:6px; }
 </style>
 </head>
@@ -24,7 +25,7 @@
 <header class="top">
   <div>
     <h1>HFB Ops AI — Build Status</h1>
-    <div class="sub">Each piece: independently re-solved and scored by a fresh critic agent against real math + real food-rescue tools (Copia, Replate). Bar to pass: 7/10 on both axes.</div>
+    <div class="sub">Each piece independently re-solved and scored by a fresh critic agent — real code run against the case data, blind to the build — then benchmarked against real food-rescue tools (Copia, Replate, Food Rescue US, Routific). Bar to pass: 7/10 on both axes. Scores below are from that first pass; "fixes applied" pieces have had the named gap addressed but not yet re-scored by a second critic pass (time-boxed build).</div>
   </div>
 </header>
 <main>
@@ -36,10 +37,18 @@
 <footer class="foot">Updated as each critic pass completes. See app's Methodology tab for the full write-up of every formula.</footer>
 <script>
 const PIECES = [
-  { name: "Food Prioritization", desc: "Expiry urgency + pantry demand + nutrition, live-weighted ranking", correctness: null, usability: null, verdict: "pending", gap: null },
-  { name: "Delivery Routing", desc: "Cheapest-insertion VRP truck packing + nearest-neighbor routing, capacity-checked", correctness: null, usability: null, verdict: "pending", gap: null },
-  { name: "Volunteer Scheduling", desc: "Workload-to-hours conversion, shift rebalancing recommendation", correctness: null, usability: null, verdict: "pending", gap: null },
-  { name: "Fairness + Hurricane Mode", desc: "Max-min fair share allocation; demand-doubling + fuel-reserve emergency mode", correctness: null, usability: null, verdict: "pending", gap: null },
+  { name: "Food Prioritization", desc: "Expiry urgency + pantry demand + nutrition, live-weighted ranking",
+    correctness: "8/10", usability: "6/10 → fixed", verdict: "fixed",
+    gap: "Critic independently re-ran computePriorityScores() in Node against the live formula — matched exactly, sliders genuinely live. Usability miss: raw decimals with no units/badges. Fix applied: added expiry badges + plain-English \"ship X first\" readout. Not yet re-scored by a fresh critic." },
+  { name: "Delivery Routing", desc: "Cheapest-insertion VRP truck packing + nearest-neighbor routing, capacity-checked",
+    correctness: "8/10", usability: "5/10", verdict: "fail",
+    gap: "Critic's independent Python solve matched the app's numbers almost exactly (10,100 lb demand, 9,500 lb capacity, same shortfall). Real miss: haversine distance on illustrative coordinates, no live GPS/road ETAs/drag-to-reorder — a static analytical snapshot, not a dispatcher's operational tool. That gap is real and not fixed in this build; flagged honestly in the Methodology tab. Also fixed: About-tab fairness wording was overstated relative to the code — corrected." },
+  { name: "Volunteer Scheduling", desc: "Workload-to-hours conversion, shift rebalancing recommendation",
+    correctness: "8/10", usability: "5/10 → fixed", verdict: "fixed",
+    gap: "Critic re-ran computeVolunteerPlan() independently — exact match, including hurricane-mode deficits (Morning short 2, Evening short 1). Usability miss: read-only calculator, no way to act on the recommendation. Fix applied: added a fill-bar visualization and an \"Apply recommended reallocation\" action. Named-volunteer assignment (the deeper ask) is out of scope for this build." },
+  { name: "Fairness + Hurricane Mode", desc: "Max-min fair share allocation; demand-doubling + fuel-reserve emergency mode",
+    correctness: "6/10 → fixed", usability: "5/10 → fixed", verdict: "fixed",
+    gap: "Critic caught a real defect: the About tab claimed max-min fair share \"equalizes fulfillment %,\" but the algorithm actually equalizes absolute lb increments among unsatisfied pantries (small requests hit 100% first, the largest remaining pantry absorbs the rest) — code and copy disagreed. Also caught Pantry B rendering a misleading \"100%\" when it had zero urgent-batch need. Both fixed: copy now matches the algorithm's real behavior, B shows \"no urgent items today,\" and a new explainer sentence names which pantry absorbs the shortfall and why." },
 ];
 function render() {
   document.getElementById("pieces").innerHTML = PIECES.map(p => `
@@ -51,7 +60,7 @@ function render() {
       </div>
       <div class="score"><div>${p.correctness ?? "—"}</div><div class="lbl">Correctness</div></div>
       <div class="score"><div>${p.usability ?? "—"}</div><div class="lbl">Usability</div></div>
-      <div><span class="verdict ${p.verdict}">${p.verdict === "pass" ? "PASS" : p.verdict === "fail" ? "NEEDS WORK" : "REVIEW PENDING"}</span></div>
+      <div><span class="verdict ${p.verdict}">${p.verdict === "pass" ? "PASS" : p.verdict === "fixed" ? "FIXES APPLIED" : p.verdict === "fail" ? "NEEDS WORK" : "REVIEW PENDING"}</span></div>
     </div>
   `).join("");
 }
